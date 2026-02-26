@@ -1,17 +1,35 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import gspread
+from google.oauth2.service_account import Credentials
 
 st.set_page_config(page_title="Customer Executive Dashboard", layout="wide")
 
 # ---------------------------------------------------
-# LOAD DATA
+# GOOGLE SHEETS CONNECTION
 # ---------------------------------------------------
 
-@st.cache_data
+@st.cache_resource
+def connect():
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ],
+    )
+    return gspread.authorize(creds)
+
+
+@st.cache_data(ttl=300)
 def load_data():
-    df = pd.read_csv("data.csv")
-    return df
+    client = connect()
+    sheet = client.open("Utility Cloud Enrolled Volume_January 2026")
+    worksheet = sheet.worksheet("Accounts")
+    data = worksheet.get_all_records()
+    return pd.DataFrame(data)
+
 
 df = load_data()
 
@@ -21,7 +39,6 @@ df = load_data()
 
 df.columns = df.columns.str.strip()
 
-# Convert date format (DD-MM-YYYY HH:MM)
 df["account_created_date"] = pd.to_datetime(
     df["account_created_date"],
     format="%d-%m-%Y %H:%M",
@@ -30,7 +47,6 @@ df["account_created_date"] = pd.to_datetime(
 
 df["Month"] = df["account_created_date"].dt.strftime("%b-%Y")
 
-# Count multiple credential_ids
 df["credential_count"] = df["credential_id"].apply(
     lambda x: len(str(x).split(",")) if pd.notnull(x) else 0
 )
@@ -84,7 +100,6 @@ st.markdown("---")
 
 col1, col2 = st.columns(2)
 
-# Top 10 Customer Volume
 top10 = (
     filtered_df["organization_name"]
     .value_counts()
@@ -103,7 +118,6 @@ fig_pie = px.pie(
 
 col1.plotly_chart(fig_pie, use_container_width=True)
 
-# Customer Type Distribution
 cust_type = (
     filtered_df["Customer_Type"]
     .value_counts()
@@ -128,7 +142,6 @@ col2.plotly_chart(fig_bar, use_container_width=True)
 
 col3, col4 = st.columns(2)
 
-# Account Status Donut
 status_dist = (
     filtered_df["account_status"]
     .value_counts()
@@ -147,7 +160,6 @@ fig_donut = px.pie(
 
 col3.plotly_chart(fig_donut, use_container_width=True)
 
-# Monthly Volume Trend
 monthly = (
     filtered_df.groupby("Month")
     .size()
